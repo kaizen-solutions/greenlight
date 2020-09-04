@@ -31,16 +31,16 @@ object Example2 extends App {
   case class ParsedAddress(street: String, city: String, country: String)
 
   // Getters
-  val getLatitude: Validator[GeoCoords, Nothing, Nothing, String] = from[GeoCoords].map(_.lat)
-  val getLongitude: Validator[GeoCoords, Nothing, Nothing, String] = from[GeoCoords].map(_.long)
-  val getStreet: Validator[Address, Nothing, Nothing, String] = from[Address].map(_.street)
-  val getCity: Validator[Address, Nothing, Nothing, String] = from[Address].map(_.city)
-  val getCountry: Validator[Address, Nothing, Nothing, String] = from[Address].map(_.country)
-  val getCoords: Validator[MyObj, Nothing, Nothing, GeoCoords] = from[MyObj].map(_.coords)
-  val getAddress: Validator[MyObj, Nothing, Nothing, Address] = from[MyObj].map(_.address)
+  val getLatitude = from[GeoCoords].map(_.lat)
+  val getLongitude = from[GeoCoords].map(_.long)
+  val getStreet = from[Address].map(_.street)
+  val getCity = from[Address].map(_.city)
+  val getCountry = from[Address].map(_.country)
+  val getCoords = from[MyObj].map(_.coords)
+  val getAddress = from[MyObj].map(_.address)
 
   // Parsers
-  val parseLatitude: Validator[GeoCoords, Nothing, Exception, Double] = (getLatitude andThen nonEmptyString andThen convertToDouble) or success(0d)
+  val parseLatitude = (getLatitude andThen nonEmptyString andThen convertToDouble) or success(0d)
   val parseLongitude = getLongitude andThen convertToDouble
   val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
   val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)

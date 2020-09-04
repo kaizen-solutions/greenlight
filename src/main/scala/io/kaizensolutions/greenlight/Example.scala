@@ -2,12 +2,16 @@ package io.kaizensolutions.greenlight
 
 import cats.data.{ Ior, NonEmptyChain }
 
+case class Start(a: String, b: String)
+
 object Usage {
   def main(args: Array[String]): Unit = {
     import GValidation._
     val validX = validate((s: String) => Ior.bothNec(s"String too short", s))
     val end: GValidation[String, NonEmptyChain[String], String *** String *** String *** String] =
       validX and validX and validX and validX
+
+//    val aValidator = validate((s: String) => Ior.right(s))
 
 //    end.map {
 //      case a *** b *** c *** d => ???

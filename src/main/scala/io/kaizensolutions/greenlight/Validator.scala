@@ -8,109 +8,96 @@ sealed trait Validator[-I, +E, +W, +A] extends Product with Serializable {
   def value: Option[A]
   def run(i: I): Validator[Any, E, W, A]
   def map[B](f: A => B): Validator[I, E, W, B]
+  def mapWarning[W2](f: W => W2): Validator[I, E, W2, A]
   def mapError[E2](f: E => E2): Validator[I, E2, W, A]
   def flatMap[I2 <: I, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C]
+
+  def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B] =
+    Convert(Vector.empty, i => this.run(i).flatMap(that.run))
+
   def zip[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] = Validator.conversion { (i: I2) =>
     val aVal = this.run(i)
     val bVal = that.run(i)
 
-    Result(
-      aVal.warnings ++ bVal.warnings,
-      aVal.value.flatMap(a => bVal.value.map(b => (a, b))).toRight(aVal.errors ++ bVal.errors)
-    )
-  }
-
-  def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B]
-  def focusOn[B](f: A => B): Validator[I, E, W, B] = map(f)
-  def and[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] = this.zip(that)
-
-  def or[I2 <: I, E2, W2 >: W, B >: A, EW2](that: Validator[I2, E2, W2, B])(implicit lub: Lub[E, W2, EW2]): Validator[I2, E2, EW2, B] = Validator.conversion { (i: I2) =>
-    val aVal: Validator[Any, E, W, A] = this.run(i)
-
-    if (aVal.errors.isEmpty) Result(
-      aVal.warnings.map(lub.right),
-      aVal.value.toRight(Vector.empty)
-    )
-    else {
-      val bVal: Validator[Any, E2, W2, B] = that.run(i)
-
-      val a: Vector[EW2] = (aVal.warnings ++ bVal.warnings).map(lub.right)
-      val b: Vector[EW2] = aVal.errors.map(lub.left)
-      val c: Vector[EW2] = a ++ b
-
-      Result(
-        c,
-        bVal.value.toRight(bVal.errors)
-      )
+    (aVal, bVal) match {
+      case (Error(w1, e1), Error(w2, e2)) => Error(w1 ++ w2, e1 ++ e2)
+      case (Error(w1, e1), Success(w2, _)) => Error(w1 ++ w2, e1)
+      case (Success(w1, _), Error(w2, e2)) => Error(w1 ++ w2, e2)
+      case (Success(w1, r1), Success(w2, r2)) => Success(w1 ++ w2, (r1, r2))
     }
   }
 
+  def focusOn[B](f: A => B): Validator[I, E, W, B] = map(f)
+  def and[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] =
+    this.zip(that)
+
+  def or[I2 <: I, E2, W2 >: W, B >: A, EW2](that: Validator[I2, E2, W2, B])(implicit lub: Lub[E, W2, EW2]): Validator[I2, E2, EW2, B] =
+    Validator.conversion { i =>
+      this.run(i) match {
+        case Success(warnings, result) => Success(warnings.map(lub.right), result)
+        case Error(w1, e1) =>
+          that.run(i) match {
+            case Success(w2, r) => Success((w1 ++ w2).map(lub.right) ++ e1.map(lub.left), r)
+            case Error(w2, e2) => Error((w1 ++ w2).map(lub.right) ++ e1.map(lub.left), e2)
+          }
+      }
+    }
+
+  def as[A2](value: A2): Validator[I, E, W, A2] = this.map(_ => value)
+  def withWarning[W2](warning: W2): Validator[I, E, W2, A] = this.mapWarning(_ => warning)
   def withError[E2](error: E2): Validator[I, E2, W, A] = this.mapError(_ => error)
 }
 
-case class Result[E, W, A](warnings: Vector[W], result: Either[Vector[E], A]) extends Validator[Any, E, W, A] {
-  override def run(i: Any): Validator[Any, E, W, A] = this
+case class Success[W, A](warnings: Vector[W], result: A) extends Validator[Any, Nothing, W, A] {
+  override def errors: Vector[Nothing] = Vector.empty
 
-  override def map[B](f: A => B): Validator[Any, E, W, B] = Result(warnings, result.map(f))
+  override def value: Option[A] = Some(result)
 
-  override def mapError[E2](f: E => E2): Validator[Any, E2, W, A] = Result(warnings, result.left.map(_.map(f)))
+  override def run(i: Any): Validator[Any, Nothing, W, A] = this
 
-  override def flatMap[I2 <: Any, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] = {
-    val r = result.map(f)
-    Result(
-      warnings ++ r.map(_.warnings).getOrElse(Vector.empty),
-      r.flatMap(v => v.value.toRight(v.errors))
-    )
+  override def map[B](f: A => B): Validator[Any, Nothing, W, B] = Success(warnings, f(result))
+
+  override def mapWarning[W2](f: W => W2): Validator[Any, Nothing, W2, A] = Success(warnings.map(f), result)
+
+  override def mapError[E2](f: Nothing => E2): Validator[Any, E2, W, A] = this
+
+  override def flatMap[I2 <: Any, E2 >: Nothing, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] = {
+    val res = f(result)
+    Convert(warnings ++ res.warnings, i2 => res.run(i2))
   }
-
-  override def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[Any, E2, W2, B] = {
-    val thatRes = result.map(that.run)
-
-    Result(
-      warnings ++ thatRes.map(_.warnings).getOrElse(Vector.empty),
-      thatRes.flatMap(r => r.value.toRight(r.errors))
-    )
-  }
-
-  override def errors: Vector[E] = result.left.getOrElse(Vector.empty)
-
-  override def value: Option[A] = result.toOption
 }
 
-case class Test[I, W](warnings: Vector[W], pred: I => Boolean) extends Validator[I, Unit, W, I] {
-  override def value: Option[I] = None
+case class Error[E, W](warnings: Vector[W], result: Vector[E]) extends Validator[Any, E, W, Nothing] {
+  override def errors: Vector[E] = result
 
-  override def map[B](f: I => B): Validator[I, Unit, W, B] =
-    Convert(warnings, i => run(i).map(f))
+  override def value: Option[Nothing] = None
 
-  override def flatMap[I2 <: I, E2 >: Unit, W2 >: W, C](f: I => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] =
-    Convert(warnings, i => run(i).flatMap(i2 => f(i2).run(i)))
+  override def run(i: Any): Validator[Any, E, W, Nothing] = this
 
-  override def run(i: I): Validator[Any, Unit, W, I] =
-    if (pred(i)) Result(warnings, Right(i))
-    else Result(warnings, Left(Vector(())))
+  override def map[B](f: Nothing => B): Validator[Any, E, W, B] = this
 
-  override def andThen[E2 >: Unit, W2 >: W, B](that: Validator[I, E2, W2, B]): Validator[I, E2, W2, B] =
-    Convert(warnings, i => run(i).flatMap(_ => that.run(i)))
+  override def mapWarning[W2](f: W => W2): Validator[Any, E, W2, Nothing] =
+    Error(warnings.map(f), result)
 
-  override def mapError[E2](f: Unit => E2): Validator[I, E2, W, I] =
-    Convert(warnings, i => run(i).mapError(f))
+  override def mapError[E2](f: E => E2): Validator[Any, E2, W, Nothing] =
+    Error(warnings, result.map(f))
 
-  override def errors: Vector[Unit] = Vector.empty
+  override def flatMap[I2 <: Any, E2 >: E, W2 >: W, C](f: Nothing => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] = this
 }
 
 case class Convert[I, E, W, A](warnings: Vector[W], conv: I => Validator[Any, E, W, A]) extends Validator[I, E, W, A] {
   override def map[B](f: A => B): Validator[I, E, W, B] = Convert(warnings, i => conv(i).map(f))
 
+  override def mapWarning[W2](f: W => W2): Validator[I, E, W2, A] =
+    Convert(warnings.map(f), i => conv(i).run().mapWarning(f))
+
+  override def mapError[E2](f: E => E2): Validator[I, E2, W, A] =
+    Convert(warnings, i => conv(i).mapError(f))
+
   override def flatMap[I2 <: I, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] =
     Convert(warnings, i => conv(i).flatMap(a => f(a).run(i)))
 
   override def run(i: I): Validator[Any, E, W, A] = conv(i).run()
-
-  override def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B] =
-    Convert(warnings, i => conv(i).flatMap(a => that.run(a)))
-
-  override def mapError[E2](f: E => E2): Validator[I, E2, W, A] = Convert(warnings, i => conv(i).mapError(f))
 
   override def value: Option[A] = None
 
@@ -119,9 +106,13 @@ case class Convert[I, E, W, A](warnings: Vector[W], conv: I => Validator[Any, E,
 
 object Validator {
   def from[I]: Validator[I, Nothing, Nothing, I] = Convert(Vector.empty, i => success(i))
-  def success[A](a: A): Validator[Any, Nothing, Nothing, A] = Result(Vector.empty, Right(a))
-  def failure[E](error: E): Validator[Any, E, Nothing, Nothing] = Result(Vector.empty, Left(Vector(error)))
-  def test[A](pred: A => Boolean): Validator[A, Unit, Nothing, A] = Test(Vector.empty, pred)
+  def success[A](a: A): Validator[Any, Nothing, Nothing, A] = Success(Vector.empty, a)
+  def warning[W](warning: W): Validator[Any, Nothing, W, Unit] = Success(Vector(warning), ())
+  def error[E](error: E): Validator[Any, E, Nothing, Nothing] = Error(Vector.empty, Vector(error))
+  def test[A](pred: A => Boolean): Validator[A, Unit, Nothing, A] = Convert(Vector.empty, a =>
+    if(pred(a)) success(a)
+    else error(())
+  )
   def conversion[I, E, W, A](conv: I => Validator[Any, E, W, A]): Validator[I, E, W, A] = Convert(Vector.empty, i => conv(i))
 
   implicit class Tuple2Ops[I, E, W, A, B](value: (Validator[I, E, W, A], Validator[I, E, W, B])) {
@@ -136,16 +127,7 @@ object Validator {
       val bVal = value._2.run(i)
       val cVal = value._3.run(i)
 
-      Result(
-        aVal.warnings ++ bVal.warnings ++ cVal.warnings,
-        (
-          for {
-            a <- aVal.value
-            b <- bVal.value
-            c <- cVal.value
-          } yield (a, b, c)
-          ).toRight(aVal.errors ++ bVal.errors ++ cVal.errors)
-      )
+      aVal.zip(bVal).zip(cVal).map(t => (t._1._1, t._1._2, t._2))
     }
 
     def mapN[D](f: (A, B, C) => D): Validator[I, E, W, D] = value.join.map(f.tupled)

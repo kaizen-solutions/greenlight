@@ -15,11 +15,11 @@ object Example2 extends App {
       .withError(new Exception("Not Numeric"))
 
   val stringToInt =
-    conversion((s: String) => Try(s.toInt).fold(_ => failure(()), success))
+    conversion((s: String) => Try(s.toInt).fold(_ => error(()), success))
       .withError(new Exception("Failed to convert to Int"))
 
   val convertToDouble =
-    conversion((s: String) => Try(s.toDouble).fold(_ => failure(()), success))
+    conversion((s: String) => Try(s.toDouble).fold(_ => error(()), success))
       .withError(new Exception("Failed to convert to Double"))
 
   case class MyObj(coords: GeoCoords, address: Address)
@@ -40,7 +40,7 @@ object Example2 extends App {
   val getAddress = from[MyObj].map(_.address)
 
   // Parsers
-  val parseLatitude = (getLatitude andThen nonEmptyString andThen convertToDouble) or success(0d)
+  val parseLatitude = getLatitude andThen nonEmptyString andThen convertToDouble
   val parseLongitude = getLongitude andThen convertToDouble
   val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
   val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)

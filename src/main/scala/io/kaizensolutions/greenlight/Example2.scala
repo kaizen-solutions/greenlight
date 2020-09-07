@@ -1,26 +1,30 @@
 package io.kaizensolutions.greenlight
 
 import Validator._
+
 import scala.util.Try
 
 object Example2 extends App {
   val nonEmptyString =
     from[String]
       .andThen(test(_.length > 0))
-      .withError(new Exception("Empty String"))
+      .asError(new Exception("Empty String"))
 
   val numericString =
     from[String]
-      .andThen(test(_.forall(c => c >= 63 && c <= 103)))
-      .withError(new Exception("Not Numeric"))
+      //.andThen(test(_.forall(c => c >= 63 && c <= 103)))
+      .andThen(test(_ => false))
+      .withError((i: String) => new Exception(s"Value $i is not numeric"))
 
   val stringToInt =
-    conversion((s: String) => Try(s.toInt).fold(_ => error(()), success))
-      .withError(new Exception("Failed to convert to Int"))
+    Validator
+      .fromFallible((s: String) => Try(s.toInt))
+      .withError((i: String) => new Exception(s"Failed to convert $i to Int"))
 
   val convertToDouble =
-    conversion((s: String) => Try(s.toDouble).fold(_ => error(()), success))
-      .withError(new Exception("Failed to convert to Double"))
+    Validator
+      .fromFallible((s: String) => Try(s.toDouble))
+      .withError((i: String) => new Exception(s"Failed to convert $i to Double"))
 
   case class MyObj(coords: GeoCoords, address: Address)
   case class GeoCoords(lat: String, long: String)
@@ -40,7 +44,7 @@ object Example2 extends App {
   val getAddress = from[MyObj].map(_.address)
 
   // Parsers
-  val parseLatitude = getLatitude andThen nonEmptyString andThen convertToDouble
+  val parseLatitude = getLatitude andThen nonEmptyString andThen numericString andThen convertToDouble
   val parseLongitude = getLongitude andThen convertToDouble
   val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
   val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
@@ -48,5 +52,22 @@ object Example2 extends App {
 
   val obj1 = MyObj(GeoCoords("24.1234", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
 
-  println(parseObject.run(obj1))
+  val (warnings, errorsOrResult) = parseObject.run(obj1).extract
+
+  parseObject.run(obj1) match {
+    case Success(warnings, result) =>
+      println("Success!!!")
+      println(s"Result: $result")
+      println()
+      println("Warnings:")
+      warnings.foreach(println)
+
+    case Error(warnings, errors) =>
+      println("Failed :(")
+      println("Errors:")
+      errors.foreach(println)
+      println()
+      println("Warnings:")
+      warnings.foreach(println)
+  }
 }

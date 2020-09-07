@@ -1,12 +1,15 @@
 package io.kaizensolutions.greenlight
 
+import io.kaizensolutions.greenlight.Validator.convert
 import shapeless.Lub
+
+import scala.util.Try
 
 sealed trait Validator[-I, +E, +W, +A] extends Product with Serializable {
   def errors: Vector[E]
   def warnings: Vector[W]
   def value: Option[A]
-  def run(i: I): Validator[Any, E, W, A]
+  def run(i: I): Result[E, W, A]
   def map[B](f: A => B): Validator[I, E, W, B]
   def mapWarning[W2](f: W => W2): Validator[I, E, W2, A]
   def mapError[E2](f: E => E2): Validator[I, E2, W, A]
@@ -15,7 +18,7 @@ sealed trait Validator[-I, +E, +W, +A] extends Product with Serializable {
   def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B] =
     Convert(Vector.empty, i => this.run(i).flatMap(that.run))
 
-  def zip[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] = Validator.conversion { (i: I2) =>
+  def zip[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] = Validator.convert { (i: I2) =>
     val aVal = this.run(i)
     val bVal = that.run(i)
 
@@ -32,7 +35,7 @@ sealed trait Validator[-I, +E, +W, +A] extends Product with Serializable {
     this.zip(that)
 
   def or[I2 <: I, E2, W2 >: W, B >: A, EW2](that: Validator[I2, E2, W2, B])(implicit lub: Lub[E, W2, EW2]): Validator[I2, E2, EW2, B] =
-    Validator.conversion { i =>
+    Validator.convert { i =>
       this.run(i) match {
         case Success(warnings, result) => Success(warnings.map(lub.right), result)
         case Error(w1, e1) =>
@@ -45,15 +48,25 @@ sealed trait Validator[-I, +E, +W, +A] extends Product with Serializable {
 
   def as[A2](value: A2): Validator[I, E, W, A2] = this.map(_ => value)
   def withWarning[W2](warning: W2): Validator[I, E, W2, A] = this.mapWarning(_ => warning)
-  def withError[E2](error: E2): Validator[I, E2, W, A] = this.mapError(_ => error)
+  def withError[I2 <: I, E2](handler: I2 => E2): Validator[I2, E2, W, A] =
+    convert(i => this.run(i) match {
+      case Error(warnings, _) => Error(warnings, Vector(handler(i)))
+      case Success(warnings, result) => Success(warnings, result)
+    })
+
+  def asError[E2](error: E2): Validator[I, E2, W, A] = withError(_ => error)
 }
 
-case class Success[W, A](warnings: Vector[W], result: A) extends Validator[Any, Nothing, W, A] {
+sealed trait Result[+E, +W, +A] extends Validator[Any, E, W, A] {
+  def extract: (Vector[W], Either[Vector[E], A]) = (this.warnings, this.value.toRight(this.errors))
+}
+
+case class Success[W, A](warnings: Vector[W], result: A) extends Result[Nothing, W, A] {
   override def errors: Vector[Nothing] = Vector.empty
 
   override def value: Option[A] = Some(result)
 
-  override def run(i: Any): Validator[Any, Nothing, W, A] = this
+  override def run(i: Any): Result[Nothing, W, A] = this
 
   override def map[B](f: A => B): Validator[Any, Nothing, W, B] = Success(warnings, f(result))
 
@@ -67,12 +80,12 @@ case class Success[W, A](warnings: Vector[W], result: A) extends Validator[Any, 
   }
 }
 
-case class Error[E, W](warnings: Vector[W], result: Vector[E]) extends Validator[Any, E, W, Nothing] {
+case class Error[E, W](warnings: Vector[W], result: Vector[E]) extends Result[E, W, Nothing] {
   override def errors: Vector[E] = result
 
   override def value: Option[Nothing] = None
 
-  override def run(i: Any): Validator[Any, E, W, Nothing] = this
+  override def run(i: Any): Result[E, W, Nothing] = this
 
   override def map[B](f: Nothing => B): Validator[Any, E, W, B] = this
 
@@ -97,7 +110,7 @@ case class Convert[I, E, W, A](warnings: Vector[W], conv: I => Validator[Any, E,
   override def flatMap[I2 <: I, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] =
     Convert(warnings, i => conv(i).flatMap(a => f(a).run(i)))
 
-  override def run(i: I): Validator[Any, E, W, A] = conv(i).run()
+  override def run(i: I): Result[E, W, A] = conv(i).run()
 
   override def value: Option[A] = None
 
@@ -105,15 +118,35 @@ case class Convert[I, E, W, A](warnings: Vector[W], conv: I => Validator[Any, E,
 }
 
 object Validator {
-  def from[I]: Validator[I, Nothing, Nothing, I] = Convert(Vector.empty, i => success(i))
-  def success[A](a: A): Validator[Any, Nothing, Nothing, A] = Success(Vector.empty, a)
-  def warning[W](warning: W): Validator[Any, Nothing, W, Unit] = Success(Vector(warning), ())
-  def error[E](error: E): Validator[Any, E, Nothing, Nothing] = Error(Vector.empty, Vector(error))
-  def test[A](pred: A => Boolean): Validator[A, Unit, Nothing, A] = Convert(Vector.empty, a =>
-    if(pred(a)) success(a)
-    else error(())
-  )
-  def conversion[I, E, W, A](conv: I => Validator[Any, E, W, A]): Validator[I, E, W, A] = Convert(Vector.empty, i => conv(i))
+  def from[I]: Validator[I, Nothing, Nothing, I] =
+    Convert(Vector.empty, i => success(i))
+
+  def fromFunction[A, B](f: A => B): Validator[A, Nothing, Nothing, B] =
+    convert((a: A) => success(f(a)))
+
+  def fromTry[A](tRY: Try[A]): Result[Throwable, Nothing, A] =
+    tRY.fold(error, success)
+
+  def fromFallible[A, B](f: A => Try[B]): Validator[A, Throwable, Nothing, B] =
+    convert(a => f(a).fold(error, success))
+
+  def success[A](a: A): Result[Nothing, Nothing, A] =
+    Success(Vector.empty, a)
+
+  def warning[W](warning: W): Result[Nothing, W, Unit] =
+    Success(Vector(warning), ())
+
+  def error[E](error: E): Result[E, Nothing, Nothing] =
+    Error(Vector.empty, Vector(error))
+
+  def test[A](pred: A => Boolean): Validator[A, Unit, Nothing, A] =
+    Convert(Vector.empty, a =>
+      if (pred(a)) success(a)
+      else error(())
+    )
+
+  def convert[I, E, W, A](conv: I => Validator[Any, E, W, A]): Validator[I, E, W, A] =
+    Convert(Vector.empty, i => conv(i))
 
   implicit class Tuple2Ops[I, E, W, A, B](value: (Validator[I, E, W, A], Validator[I, E, W, B])) {
     def join: Validator[I, E, W, (A, B)] = value._1.zip(value._2)
@@ -122,7 +155,7 @@ object Validator {
   }
 
   implicit class Tuple3Ops[I, E, W, A, B, C](value: (Validator[I, E, W, A], Validator[I, E, W, B], Validator[I, E, W, C])) {
-    def join: Validator[I, E, W, (A, B, C)] = conversion { i =>
+    def join: Validator[I, E, W, (A, B, C)] = convert { i =>
       val aVal = value._1.run(i)
       val bVal = value._2.run(i)
       val cVal = value._3.run(i)

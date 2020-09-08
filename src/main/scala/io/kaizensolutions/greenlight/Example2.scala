@@ -11,9 +11,7 @@ object Example2 extends App {
       .asError(new Exception("Empty String"))
 
   val numericString =
-    from[String]
-      //.andThen(test(_.forall(c => c >= 63 && c <= 103)))
-      .andThen(test(_ => false))
+    test[String](_.forall(c => c >= 63 && c <= 103))
       .withError((i: String) => new Exception(s"Value $i is not numeric"))
 
   val stringToInt =
@@ -44,11 +42,24 @@ object Example2 extends App {
   val getAddress = from[MyObj].map(_.address)
 
   // Parsers
-  val parseLatitude = getLatitude andThen nonEmptyString andThen numericString andThen convertToDouble
+  val parseLatitude = getLatitude andThen nonEmptyString andThen convertToDouble
   val parseLongitude = getLongitude andThen convertToDouble
   val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
   val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
   val parseObject = (parseCoords, parseAddress) convertTo ParsedObj
+
+  val geo2parsedCoords =
+    (convertToDouble and convertToDouble)
+      .contramap((coords: GeoCoords) => (coords.lat, coords.long))
+      .map(ParsedCoords.tupled)
+
+  val addr2parsedAddr =
+    (from[String], from[String], from[String])
+      .andAll
+      .contramap((addr: Address) => (addr.street, addr.city, addr.country))
+      .map(ParsedAddress.tupled)
+
+  val blah = from[Address]
 
   val obj1 = MyObj(GeoCoords("24.1234", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
 

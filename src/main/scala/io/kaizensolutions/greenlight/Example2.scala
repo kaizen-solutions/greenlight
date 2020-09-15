@@ -33,20 +33,20 @@ object Example2 extends App {
   case class ParsedAddress(street: String, city: String, country: String)
 
   // Getters
-  val getLatitude = from[GeoCoords].map(_.lat)
+  val getLatitude  = from[GeoCoords].map(_.lat)
   val getLongitude = from[GeoCoords].map(_.long)
-  val getStreet = from[Address].map(_.street)
-  val getCity = from[Address].map(_.city)
-  val getCountry = from[Address].map(_.country)
-  val getCoords = from[MyObj].map(_.coords)
-  val getAddress = from[MyObj].map(_.address)
+  val getStreet    = from[Address].map(_.street)
+  val getCity      = from[Address].map(_.city)
+  val getCountry   = from[Address].map(_.country)
+  val getCoords    = from[MyObj].map(_.coords)
+  val getAddress   = from[MyObj].map(_.address)
 
   // Parsers
-  val parseLatitude = getLatitude andThen nonEmptyString andThen convertToDouble
+  val parseLatitude  = getLatitude andThen nonEmptyString andThen convertToDouble
   val parseLongitude = getLongitude andThen convertToDouble
-  val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
-  val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
-  val parseObject = (parseCoords, parseAddress) convertTo ParsedObj
+  val parseCoords    = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
+  val parseAddress   = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
+  val parseObject    = (parseCoords, parseAddress) convertTo ParsedObj
 
   val geo2parsedCoords =
     (convertToDouble and convertToDouble)
@@ -54,8 +54,7 @@ object Example2 extends App {
       .map(ParsedCoords.tupled)
 
   val addr2parsedAddr =
-    (from[String], from[String], from[String])
-      .andAll
+    (from[String], from[String], from[String]).andAll
       .contramap((addr: Address) => (addr.street, addr.city, addr.country))
       .map(ParsedAddress.tupled)
 

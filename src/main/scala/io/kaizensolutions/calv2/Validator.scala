@@ -13,7 +13,7 @@ final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
     resA.zipWith(resB)(f)
   }
 
-  def zipWithCause[I1 <: I, E1 >: E, W1 >: W: Combine, B, C](that: Validator[I1, E1, W1, B])(
+  def zipWithCause[I1 <: I, E1 >: E, W1 >: W, B, C](that: Validator[I1, E1, W1, B])(
     f: (A, B) => C
   )(implicit
     eNotCause: E1 =:!= Cause[_],
@@ -53,7 +53,7 @@ final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
       }
     )
 
-  def andThenCause[I1 <: I, E1 >: E, W1 >: W: Combine, B](
+  def andThenCause[I1 <: I, E1 >: E, W1 >: W, B](
     that: Validator[A, E1, W1, B]
   )(implicit
     eNotCause: E1 =:!= Cause[_],

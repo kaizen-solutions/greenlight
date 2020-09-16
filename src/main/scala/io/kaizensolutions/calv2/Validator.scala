@@ -1,7 +1,5 @@
 package io.kaizensolutions.calv2
 
-import shapeless.=:!=
-
 import scala.util.Try
 
 final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
@@ -11,17 +9,6 @@ final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
     val resA = self.run(i)
     val resB = that.run(i)
     resA.zipWith(resB)(f)
-  }
-
-  def zipWithCause[I1 <: I, E1 >: E, W1 >: W, B, C](that: Validator[I1, E1, W1, B])(
-    f: (A, B) => C
-  )(implicit
-    eNotCause: E1 =:!= Cause[_],
-    wNotCause: W1 =:!= Cause[_]
-  ): Validator[I1, Cause[E1], Cause[W1], C] = Validator { i =>
-    val resA = self.run(i)
-    val resB = that.run(i)
-    resA.zipWithCause(resB)(f)
   }
 
   def zipRight[I1 <: I, E1 >: E, W1 >: W: Combine, B](that: Validator[I1, E1, W1, B]): Validator[I1, E1, W1, B] =
@@ -51,27 +38,6 @@ final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
         case e @ Result.Error(_)                        => e
         case ew @ Result.ErrorWithWarnings(_, _)        => ew
       }
-    )
-
-  def andThenCause[I1 <: I, E1 >: E, W1 >: W, B](
-    that: Validator[A, E1, W1, B]
-  )(implicit
-    eNotCause: E1 =:!= Cause[_],
-    wNotCause: W1 =:!= Cause[_]
-  ): ValidatorCause[I1, E1, W1, B] =
-    ValidatorCause(
-      Validator(i =>
-        self.run(i) match {
-          case Result.Success(result) =>
-            that.run(result).mapError(Cause.single).mapWarning(Cause.single)
-
-          case sw @ Result.SuccessWithWarnings(_, result) => sw.zipWithCause(that.run(result))((_, r) => r)
-
-          case e @ Result.Error(_) => e.mapError(Cause.single)
-
-          case ew @ Result.ErrorWithWarnings(_, _) => ew.mapError(Cause.single).mapWarning(Cause.single)
-        }
-      )
     )
 
   def flatMap[I1 <: I, E1 >: E, W1 >: W: Combine, B](f: A => Validator[I1, E1, W1, B]): Validator[I1, E1, W1, B] =
@@ -108,7 +74,16 @@ final case class Validator[-I, +E, +W, +A](run: I => Result[E, W, A]) { self =>
 
   def mapWarning[WW](f: W => WW): Validator[I, E, WW, A] = Validator(i => self.run(i).mapWarning(f))
 
-  def withWarning[WW >: W: Combine](w: WW): Validator[I, E, WW, A] = Validator(i => self.run(i).appendWarning(w))
+  def asWarning[W1](w: W1): Validator[I, E, W1, A] = Validator(i =>
+    self.run(i) match {
+      case Result.Success(result)                => Result.SuccessWithWarnings(w, result)
+      case Result.SuccessWithWarnings(_, result) => Result.SuccessWithWarnings(w, result)
+      case Result.Error(error)                   => Result.ErrorWithWarnings(w, error)
+      case Result.ErrorWithWarnings(_, error)    => Result.ErrorWithWarnings(w, error)
+    }
+  )
+
+  def addWarning[WW >: W: Combine](w: WW): Validator[I, E, WW, A] = Validator(i => self.run(i).appendWarning(w))
 
   def contramapInput[II](f: II => I): Validator[II, E, W, A] = Validator(ii => self.run(f(ii)))
 
@@ -221,9 +196,25 @@ case class ValidatorCause[-I, +E, +W, +A](underlying: Validator[I, Cause[E], Cau
     ValidatorCause(underlying.flatMap(a => f(a).underlying)(Cause.causeThenCombine))
 
   def andThen[I1 <: I, E1 >: E, W1 >: W, B](
-    that: Validator[A, Cause[E1], Cause[W1], B]
+    that: ValidatorCause[A, E1, W1, B]
   ): ValidatorCause[I1, E1, W1, B] =
-    ValidatorCause(underlying.andThen(that)(Cause.causeThenCombine))
+    ValidatorCause(
+      Validator(i =>
+        self.run(i) match {
+          case Result.Success(result) =>
+            that.run(result)
+
+          case sw @ Result.SuccessWithWarnings(_, result) =>
+            sw.zipWith(that.run(result))((_, r) => r)(Cause.causeThenCombine)
+
+          case e @ Result.Error(_) =>
+            e
+
+          case ew @ Result.ErrorWithWarnings(_, _) =>
+            ew
+        }
+      )
+    )
 }
 
 trait ValidatorSyntax {

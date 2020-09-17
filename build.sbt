@@ -11,5 +11,5 @@ scalacOptions ++= Seq(
 
 libraryDependencies ++= Seq(
   "org.typelevel" %% "cats-core" % "2.1.1",
-  "com.chuusai" %% "shapeless" % "2.3.3"
+  "com.chuusai"   %% "shapeless" % "2.3.3"
 )

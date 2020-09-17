@@ -84,11 +84,8 @@ final case class Validator[-I, +E, +W, +A](conv: I => Result[E, W, A]) {
 }
 
 object Validator {
-  def validate[I, E, W, A](conv: I => Result[E, W, A]): Validator[I, E, W, A] =
-    Validator(i => conv(i))
-
   def fromFunction[A, B](f: A => B): Validator[A, Nothing, Nothing, B] =
-    validate((a: A) => Result.success(f(a)))
+    Validator((a: A) => Result.success(f(a)))
 
   def success[A](value: A): Validator[Any, Nothing, Nothing, A] =
     fromFunction(Function.const(value))
@@ -100,10 +97,10 @@ object Validator {
     fromFunction(identity[I])
 
   def fromFallible[A, B](f: A => Try[B]): Validator[A, Throwable, Nothing, B] =
-    validate(a => f(a).fold(Result.error, Result.success))
+    Validator(a => f(a).fold(Result.error, Result.success))
 
   def test[A](pred: A => Boolean): Validator[A, Unit, Nothing, A] =
-    validate(a =>
+    Validator(a =>
       if (pred(a)) Result.success(a)
       else Result.error(())
     )
@@ -121,7 +118,7 @@ object Validator {
 
   implicit class Tuple3Ops[I, E, W, A, B, C](value: (Validator[I, E, W, A], Validator[I, E, W, B], Validator[I, E, W, C])) {
     def join: Validator[I, E, W, (A, B, C)] =
-      validate { i =>
+      Validator { i =>
         val aVal = value._1.run(i)
         val bVal = value._2.run(i)
         val cVal = value._3.run(i)
@@ -137,12 +134,13 @@ object Validator {
   }
 
   implicit class Tuple3Ops2[I1, I2, I3, E, W, A, B, C](value: (Validator[I1, E, W, A], Validator[I2, E, W, B], Validator[I3, E, W, C])) {
-    def all: Validator[(I1, I2, I3), E, W, (A, B, C)] = validate { inputs =>
-      val aVal = value._1.run(inputs._1)
-      val bVal = value._2.run(inputs._2)
-      val cVal = value._3.run(inputs._3)
+    def all: Validator[(I1, I2, I3), E, W, (A, B, C)] =
+      Validator { inputs =>
+        val aVal = value._1.run(inputs._1)
+        val bVal = value._2.run(inputs._2)
+        val cVal = value._3.run(inputs._3)
 
-      aVal.zip(bVal).zip(cVal).map(t => (t._1._1, t._1._2, t._2))
-    }
+        aVal.zip(bVal).zip(cVal).map(t => (t._1._1, t._1._2, t._2))
+      }
   }
 }

@@ -1,5 +1,6 @@
 package io.kaizensolutions.nigelv1
 
+import io.kaizensolutions.nigelv1.Result.{Error, Success}
 import io.kaizensolutions.nigelv1.Validator.{from, test}
 
 import scala.util.Try

@@ -1,7 +1,7 @@
 package io.kaizensolutions.nigelv1
 
 import io.kaizensolutions.nigelv1.Result.{Error, Success}
-import io.kaizensolutions.nigelv1.Validator.{from, test}
+import io.kaizensolutions.nigelv1.Validator.{from, success, test}
 
 import scala.util.Try
 
@@ -55,7 +55,7 @@ object Example extends App {
 
 
   val geo2parsedCoords =
-    (convertToDouble and convertToDouble)
+    ((convertToDouble or success(0d)) and (convertToDouble or success(0d)))
       .contramap((coords: GeoCoords) => (coords.lat, coords.long))
       .map(ParsedCoords.tupled)
 
@@ -67,11 +67,15 @@ object Example extends App {
         ParsedAddress.tupled
       )
 
-  val obj1 = MyObj(GeoCoords("24.1234", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
+  val parsedObj =
+    (geo2parsedCoords and addr2parsedAddr)
+      .contramap((o: MyObj) => (o.coords, o.address))
+      .map(ParsedObj.tupled)
 
-  val (warnings, errorsOrResult) = parseObject.run(obj1).extract
 
-  parseObject.run(obj1) match {
+  val obj1 = MyObj(GeoCoords("23.123", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
+
+  parsedObj.run(obj1) match {
     case Success(warnings, result) =>
       println("Success!!!")
       println(s"Result: $result")

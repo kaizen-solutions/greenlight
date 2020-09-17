@@ -6,36 +6,36 @@ import shapeless.Lub
 
 import scala.util.Try
 
-final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Result[E, W, A]) {
+final case class Validator[-I, +E, +W, +A](conv: I => Result[E, W, A]) {
   def map[B](f: A => B): Validator[I, E, W, B] =
-    Validator(warnings, i => conv(i).map(f))
+    Validator(i => conv(i).map(f))
 
   def mapWarning[W2](f: W => W2): Validator[I, E, W2, A] =
-    Validator(warnings.map(f), conv(_).mapWarning(f))
+    Validator(conv(_).mapWarning(f))
 
   def mapError[E2](f: E => E2): Validator[I, E2, W, A] =
-    Validator(warnings, conv(_).mapError(f))
+    Validator(conv(_).mapError(f))
 
   def flatMap[I2 <: I, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] =
-    Validator(warnings, i2 => conv(i2).flatMap(a => f(a).run(i2)))
+    Validator(i2 => conv(i2).flatMap(a => f(a).run(i2)))
 
   def run(i: I): Result[E, W, A] =
     conv(i)
 
   def ignoreWarnings: Validator[I, E, Nothing, A] =
-    Validator(Vector.empty, conv(_).ignoreWarnings)
+    Validator(conv(_).ignoreWarnings)
 
   def contramap[I2](f: I2 => I): Validator[I2, E, W, A] =
-    Validator(warnings, f andThen conv)
+    Validator(f andThen conv)
 
   def dimap[I2, B](contra: I2 => I, cov: A => B): Validator[I2, E, W, B] =
-    Validator(warnings, i2 => (contra andThen conv)(i2).map(cov))
+    Validator(i2 => (contra andThen conv)(i2).map(cov))
 
   def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B] =
-    validate(i => this.run(i).flatMap(that.run))
+    Validator(i => this.run(i).flatMap(that.run))
 
   def zip[I2 <: I, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[I2, E2, W2, (A, B)] =
-    validate { i =>
+    Validator { i =>
       val aVal = this.run(i)
       val bVal = that.run(i)
 
@@ -43,7 +43,7 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
     }
 
   def and[I2, E2 >: E, W2 >: W, B](that: Validator[I2, E2, W2, B]): Validator[(I, I2), E2, W2, (A, B)] =
-    validate { (tuple: (I, I2)) =>
+    Validator { (tuple: (I, I2)) =>
       val aVal = this.run(tuple._1)
       val bVal = that.run(tuple._2)
 
@@ -51,7 +51,7 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
     }
 
   def or[I2 <: I, E2, W2 >: W, B >: A, EW2](that: Validator[I2, E2, W2, B])(implicit lub: Lub[E, W2, EW2]): Validator[I2, E2, EW2, B] =
-    validate { i =>
+    Validator { i =>
       this.run(i) match {
         case Success(warnings, result) => Success(warnings.map(lub.right), result)
         case Error(w1, e1) =>
@@ -66,13 +66,13 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
     this.map(_ => value)
 
   def withWarning[I2 <: I, W2](handler: I2 => W2): Validator[I2, E, W2, A] =
-    validate(i => this.run(i) match {
+    Validator(i => this.run(i) match {
       case Error(_, errors) => Error(Vector(handler(i)), errors)
       case Success(_, result) => Success(Vector(handler(i)), result)
     })
 
   def withError[I2 <: I, E2](handler: I2 => E2): Validator[I2, E2, W, A] =
-    validate(i => this.run(i) match {
+    Validator(i => this.run(i) match {
       case Error(warnings, _) => Error(warnings, Vector(handler(i)))
       case Success(warnings, result) => Success(warnings, result)
     })
@@ -86,7 +86,7 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
 
 object Validator {
   def validate[I, E, W, A](conv: I => Result[E, W, A]): Validator[I, E, W, A] =
-    Validator(Vector.empty, i => conv(i))
+    Validator(i => conv(i))
 
   def fromFunction[A, B](f: A => B): Validator[A, Nothing, Nothing, B] =
     validate((a: A) => Result.success(f(a)))
@@ -109,14 +109,14 @@ object Validator {
       else Result.error(())
     )
 
-  implicit class Tuple2Ops[I, E, W, A, B](value: (Validator[I, E, W, A], Validator[I, E, W, B])) {
-    def join: Validator[I, E, W, (A, B)] =
+  implicit class Tuple2Ops[I, E, E2 >: E, W, W2 >: W, A, B](value: (Validator[I, E, W, A], Validator[I, E, W, B])) {
+    def join: Validator[I, E2, W2, (A, B)] =
       value._1.zip(value._2)
 
-    def mapN[C](f: (A, B) => C): Validator[I, E, W, C] =
+    def mapN[C](f: (A, B) => C): Validator[I, E2, W2, C] =
       value.join.map(f.tupled)
 
-    def convertTo[C](f: (A, B) => C): Validator[I, E, W, C] =
+    def convertTo[C](f: (A, B) => C): Validator[I, E2, W2, C] =
       value.join.map(f.tupled)
   }
 

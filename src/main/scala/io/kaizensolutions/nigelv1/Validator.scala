@@ -19,7 +19,8 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
   def flatMap[I2 <: I, E2 >: E, W2 >: W, C](f: A => Validator[I2, E2, W2, C]): Validator[I2, E2, W2, C] =
     Validator(warnings, i2 => conv(i2).flatMap(a => f(a).run(i2)))
 
-  def run(i: I): Result[E, W, A] = conv(i)
+  def run(i: I): Result[E, W, A] =
+    conv(i)
 
   def ignoreWarnings: Validator[I, E, Nothing, A] =
     Validator(Vector.empty, conv(_).ignoreWarnings)
@@ -76,8 +77,11 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
       case Success(warnings, result) => Success(warnings, result)
     })
 
-  def asWarning[W2](warning: W2): Validator[I, E, W2, A] = withWarning(_ => warning)
-  def asError[E2](error: E2): Validator[I, E2, W, A] = withError(_ => error)
+  def asWarning[W2](warning: W2): Validator[I, E, W2, A] =
+    withWarning(_ => warning)
+
+  def asError[E2](error: E2): Validator[I, E2, W, A] =
+    withError(_ => error)
 }
 
 object Validator {
@@ -90,7 +94,8 @@ object Validator {
   def success[A](value: A): Validator[Any, Nothing, Nothing, A] =
     fromFunction(Function.const(value))
 
-  def unit: Validator[Any, Nothing, Nothing, Unit] = success(())
+  def unit: Validator[Any, Nothing, Nothing, Unit] =
+    success(())
 
   def from[I]: Validator[I, Nothing, Nothing, I] =
     fromFunction(identity[I])
@@ -105,22 +110,31 @@ object Validator {
     )
 
   implicit class Tuple2Ops[I, E, W, A, B](value: (Validator[I, E, W, A], Validator[I, E, W, B])) {
-    def join: Validator[I, E, W, (A, B)] = value._1.zip(value._2)
-    def mapN[C](f: (A, B) => C): Validator[I, E, W, C] = value.join.map(f.tupled)
-    def convertTo[C](f: (A, B) => C): Validator[I, E, W, C] = value.join.map(f.tupled)
+    def join: Validator[I, E, W, (A, B)] =
+      value._1.zip(value._2)
+
+    def mapN[C](f: (A, B) => C): Validator[I, E, W, C] =
+      value.join.map(f.tupled)
+
+    def convertTo[C](f: (A, B) => C): Validator[I, E, W, C] =
+      value.join.map(f.tupled)
   }
 
   implicit class Tuple3Ops[I, E, W, A, B, C](value: (Validator[I, E, W, A], Validator[I, E, W, B], Validator[I, E, W, C])) {
-    def join: Validator[I, E, W, (A, B, C)] = validate { i =>
-      val aVal = value._1.run(i)
-      val bVal = value._2.run(i)
-      val cVal = value._3.run(i)
+    def join: Validator[I, E, W, (A, B, C)] =
+      validate { i =>
+        val aVal = value._1.run(i)
+        val bVal = value._2.run(i)
+        val cVal = value._3.run(i)
 
-      aVal.zip(bVal).zip(cVal).map(t => (t._1._1, t._1._2, t._2))
-    }
+        aVal.zip(bVal).zip(cVal).map(t => (t._1._1, t._1._2, t._2))
+      }
 
-    def mapN[D](f: (A, B, C) => D): Validator[I, E, W, D] = value.join.map(f.tupled)
-    def convertTo[D](f: (A, B, C) => D): Validator[I, E, W, D] = value.join.map(f.tupled)
+    def mapN[D](f: (A, B, C) => D): Validator[I, E, W, D] =
+      value.join.map(f.tupled)
+
+    def convertTo[D](f: (A, B, C) => D): Validator[I, E, W, D] =
+      value.join.map(f.tupled)
   }
 
   implicit class Tuple3Ops2[I1, I2, I3, E, W, A, B, C](value: (Validator[I1, E, W, A], Validator[I2, E, W, B], Validator[I3, E, W, C])) {

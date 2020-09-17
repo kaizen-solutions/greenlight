@@ -1,7 +1,6 @@
 package io.kaizensolutions.nigelv1
 
 import io.kaizensolutions.nigelv1.Result.{Error, Success}
-import io.kaizensolutions.nigelv1.Validator._
 import shapeless.Lub
 
 import scala.util.Try

@@ -26,6 +26,9 @@ final case class Validator[-I, +E, +W, +A](warnings: Vector[W], conv: I => Resul
   def contramap[I2](f: I2 => I): Validator[I2, E, W, A] =
     Validator(warnings, f andThen conv)
 
+  def dimap[I2, B](contra: I2 => I, cov: A => B): Validator[I2, E, W, B] =
+    Validator(warnings, i2 => (contra andThen conv)(i2).map(cov))
+
   def andThen[E2 >: E, W2 >: W, B](that: Validator[A, E2, W2, B]): Validator[I, E2, W2, B] =
     validate(i => this.run(i).flatMap(that.run))
 
@@ -120,7 +123,7 @@ object Validator {
   }
 
   implicit class Tuple3Ops2[I1, I2, I3, E, W, A, B, C](value: (Validator[I1, E, W, A], Validator[I2, E, W, B], Validator[I3, E, W, C])) {
-    def andAll: Validator[(I1, I2, I3), E, W, (A, B, C)] = validate { inputs =>
+    def all: Validator[(I1, I2, I3), E, W, (A, B, C)] = validate { inputs =>
       val aVal = value._1.run(inputs._1)
       val bVal = value._2.run(inputs._2)
       val cVal = value._3.run(inputs._3)

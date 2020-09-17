@@ -59,11 +59,12 @@ object Example extends App {
       .map(ParsedCoords.tupled)
 
   val addr2parsedAddr =
-    (from[String], from[String], from[String]).andAll
-      .contramap((addr: Address) => (addr.street, addr.city, addr.country))
-      .map(ParsedAddress.tupled)
-
-  val blah = from[Address]
+    (from[String], from[String], from[String])
+      .all
+      .dimap(
+        (addr: Address) => (addr.street, addr.city, addr.country),
+        ParsedAddress.tupled
+      )
 
   val obj1 = MyObj(GeoCoords("24.1234", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
 

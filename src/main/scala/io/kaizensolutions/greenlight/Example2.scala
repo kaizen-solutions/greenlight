@@ -48,6 +48,9 @@ object Example2 extends App {
   val parseAddress   = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
   val parseObject    = (parseCoords, parseAddress) convertTo ParsedObj
 
+
+
+
   val geo2parsedCoords =
     (convertToDouble and convertToDouble)
       .contramap((coords: GeoCoords) => (coords.lat, coords.long))

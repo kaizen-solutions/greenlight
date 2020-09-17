@@ -1,35 +1,5 @@
 package io.kaizensolutions.calvin3initial
 
-trait Combine[A] {
-  def combine(a1: A, a2: A): A
-}
-object Combine extends LowPriorityCombine {}
-trait LowPriorityCombine {
-  implicit def combineSeq[A]: Combine[Seq[A]] =
-    (a1: Seq[A], a2: Seq[A]) => a1 ++ a2
-}
-
-// Idea similar to https://github.com/zio/zio-prelude/pull/229
-// see if their encoding is better
-sealed trait Cause[+A] extends Serializable with Product
-object Cause {
-  case class Single[A](a: A)                                extends Cause[A]
-  case class Both[A](a: Cause[A], b: Cause[A])              extends Cause[A]
-  case class Then[A](first: Cause[A], second: Cause[A])     extends Cause[A]
-  case class Fallback[A](first: Cause[A], second: Cause[A]) extends Cause[A]
-  case object Empty                                         extends Cause[Nothing]
-
-  def empty[A]: Cause[A]                              = Empty
-  def single[A](a: A): Cause[A]                       = Cause.Single(a)
-  def both[A](a: Cause[A], b: Cause[A]): Cause[A]     = Cause.Both(a, b)
-  def andThen[A](a: Cause[A], b: Cause[A]): Cause[A]  = Cause.Then(a, b)
-  def fallback[A](a: Cause[A], b: Cause[A]): Cause[A] = Cause.Fallback(a, b)
-
-  def causeBothCombine[A]: Combine[Cause[A]]     = (a1: Cause[A], a2: Cause[A]) => Cause.both(a1, a2)
-  def causeThenCombine[A]: Combine[Cause[A]]     = (a1: Cause[A], a2: Cause[A]) => Cause.andThen(a1, a2)
-  def causeFallbackCombine[A]: Combine[Cause[A]] = (a1: Cause[A], a2: Cause[A]) => Cause.fallback(a1, a2)
-}
-
 sealed trait Result[+E, +W, +A] { self =>
 
   def succeeded: Boolean = self match {

@@ -52,5 +52,6 @@ object Example extends App {
     getAddress andThen (getStreet + getCity + getCountry).map {
       case street * city * country => ParsedAddress(street, city, country)
     }
+
   val parseObject = (parseCoords + parseAddress).map { case c * a => ParsedObj(c, a) }
 }

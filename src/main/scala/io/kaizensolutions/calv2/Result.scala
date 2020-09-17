@@ -290,6 +290,7 @@ sealed trait Result[+E, +W, +A] { self =>
         }
     }
 }
+
 object Result {
   final case class Success[+A](result: A)                              extends Result[Nothing, Nothing, A]
   final case class SuccessWithWarnings[+W, +A](warnings: W, result: A) extends Result[Nothing, W, A]

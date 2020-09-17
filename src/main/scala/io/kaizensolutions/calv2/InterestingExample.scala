@@ -8,6 +8,7 @@ object InterestingExample extends App {
     .asErrorWithInput((i: String) => s"String is not ABC (got $i)")
     .asWarning("HELLO")
     .exposeCause
+
   val s2 =
     fromTry[String, Int](s => Try(s.toInt))
       .asError("String is not a number")

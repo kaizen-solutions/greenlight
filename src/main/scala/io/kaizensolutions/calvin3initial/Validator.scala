@@ -44,7 +44,9 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
 
   def mapWarning[WW](f: W => WW): Validator[I, E, WW, A] = Validator.MapWarning(self, f)
 
-  def asWarning[W1](w: W1): Validator[I, E, W1, A] = Validator.WithWarning(self, w)
+  def asWarning[WW](w: WW): Validator[I, E, WW, A] = Validator.MapWarning(self, (_: W) => w)
+
+  def withWarning[W1](w: W1): Validator[I, E, W1, A] = Validator.WithWarning(self, w)
 
   def contramapInput[II](f: II => I): Validator[II, E, W, A] = Validator.MapInput(self, f)
 
@@ -76,12 +78,10 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
       underlying(i)
 
     case Validator.WithWarning(underlying, w) =>
-      underlying.run(i) match {
-        case Result.Success(result)                       => Result.SuccessWithWarnings(w, result)
-        case Result.SuccessWithWarnings(warnings, result) => Result.SuccessWithWarnings(w, result)
-        case Result.Error(error)                          => Result.ErrorWithWarnings(w, error)
-        case Result.ErrorWithWarnings(warnings, error)    => Result.ErrorWithWarnings(w, error)
-      }
+      underlying
+        .run(i)
+        .withWarning(w)
+        .asInstanceOf[Result[E, W, A]]
 
     case Validator.MapInput(underlying, f) =>
       underlying.run(f(i))
@@ -99,20 +99,7 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
       underlying.run(i).mapWarning(f)
 
     case Validator.AndThen(first, second, combineE, combineW) =>
-      val a = first.run(i)
-      a match {
-        case Result.Success(result) =>
-          second.run(result)
-
-        case sw @ Result.SuccessWithWarnings(_, result) =>
-          sw.zipWith(second.run(result))((_, r) => r)(combineE, combineW)
-
-        case e @ Result.Error(error) =>
-          e
-
-        case ew @ Result.ErrorWithWarnings(_, _) =>
-          ew
-      }
+      first.run(i).flatMap(second.run)(combineW)
 
     case Validator.FlatMap(underlying, f, combineW) =>
       underlying

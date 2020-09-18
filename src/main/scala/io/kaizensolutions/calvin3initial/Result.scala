@@ -166,6 +166,13 @@ sealed trait Result[+E, +W, +A] { self =>
     case e @ Result.ErrorWithWarnings(warnings, _)   => e.copy(warnings = f(warnings))
   }
 
+  def withWarning[WW >: W](w: WW): Result[E, WW, A] = self match {
+    case Result.Success(result)                       => Result.SuccessWithWarnings(w, result)
+    case Result.SuccessWithWarnings(warnings, result) => Result.SuccessWithWarnings(w, result)
+    case Result.Error(error)                          => Result.ErrorWithWarnings(w, error)
+    case Result.ErrorWithWarnings(warnings, error)    => Result.ErrorWithWarnings(w, error)
+  }
+
   def appendWarning[WW >: W](warning: WW)(implicit C: Combine[WW]): Result[E, WW, A] = self match {
     case Result.Success(result) =>
       Result.SuccessWithWarnings(warning, result)

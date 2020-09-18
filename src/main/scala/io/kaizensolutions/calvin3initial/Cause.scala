@@ -2,7 +2,15 @@ package io.kaizensolutions.calvin3initial
 
 // Idea similar to https://github.com/zio/zio-prelude/pull/229
 // see if their encoding is better
-sealed trait Cause[+A] extends Serializable with Product
+sealed trait Cause[+A] extends Serializable with Product { self =>
+  def map[B](f: A => B): Cause[B] = self match {
+    case Cause.Single(a)               => Cause.single(f(a))
+    case Cause.Both(a, b)              => Cause.both(a.map(f), b.map(f))
+    case Cause.Then(first, second)     => Cause.andThen(first.map(f), second.map(f))
+    case Cause.Fallback(first, second) => Cause.fallback(first.map(f), second.map(f))
+    case Cause.Empty                   => Cause.Empty
+  }
+}
 
 object Cause {
   case class Single[A](a: A)                                extends Cause[A]

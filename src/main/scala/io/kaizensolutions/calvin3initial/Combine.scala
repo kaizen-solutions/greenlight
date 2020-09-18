@@ -4,7 +4,12 @@ trait Combine[A] {
   def combine(a1: A, a2: A): A
 }
 
-object Combine extends LowPriorityCombine {}
+object Combine extends LowPriorityCombine {
+  def apply[A](implicit combine: Combine[A]): Combine[A] = combine
+
+  def left[A]: Combine[A]  = (l, _) => l
+  def right[A]: Combine[A] = (_, r) => r
+}
 
 trait LowPriorityCombine {
   implicit def combineSeq[A]: Combine[Seq[A]] =

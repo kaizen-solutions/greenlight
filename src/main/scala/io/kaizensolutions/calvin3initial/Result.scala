@@ -37,9 +37,12 @@ sealed trait Result[+E, +W, +A] { self =>
       case Result.ErrorWithWarnings(warnings, error)    => errorCase(Option(warnings), error)
     }
 
-  def zipWith[B, C, E1 >: E, W1 >: W](
+  def zipWith[B, C, E1 >: E: Combine, W1 >: W: Combine](
     other: Result[E1, W1, B]
-  )(f: (A, B) => C)(implicit C: Combine[W1]): Result[E1, W1, C] =
+  )(f: (A, B) => C): Result[E1, W1, C] = {
+    val fW = Combine[W1].combine _
+    val fE = Combine[E1].combine _
+
     (self, other) match {
       case (Result.Success(a), Result.Success(b)) =>
         Result.Success(f(a, b))
@@ -57,110 +60,90 @@ sealed trait Result[+E, +W, +A] { self =>
         Result.SuccessWithWarnings(w1, f(a, b))
 
       case (Result.SuccessWithWarnings(w1, a), Result.SuccessWithWarnings(w2, b)) =>
-        Result.SuccessWithWarnings(C.combine(w1, w2), f(a, b))
+        Result.SuccessWithWarnings(fW(w1, w2), f(a, b))
 
       case (Result.SuccessWithWarnings(w1, a), Result.Error(e)) =>
         Result.ErrorWithWarnings(w1, e)
 
       case (Result.SuccessWithWarnings(w1, a), Result.ErrorWithWarnings(w2, e)) =>
-        Result.ErrorWithWarnings(C.combine(w1, w2), e)
+        Result.ErrorWithWarnings(fW(w1, w2), e)
 
       case (Result.ErrorWithWarnings(w1, e1), Result.Success(b)) =>
         Result.ErrorWithWarnings(w1, e1)
 
-      case (Result.ErrorWithWarnings(w1, e1), Result.Error(b)) =>
-        Result.ErrorWithWarnings(w1, e1)
+      case (Result.ErrorWithWarnings(w1, e1), Result.Error(e2)) =>
+        Result.ErrorWithWarnings(w1, fE(e1, e2))
 
       case (Result.ErrorWithWarnings(w1, e1), Result.SuccessWithWarnings(w2, b)) =>
-        Result.ErrorWithWarnings(C.combine(w1, w2), e1)
+        Result.ErrorWithWarnings(fW(w1, w2), e1)
 
       case (Result.ErrorWithWarnings(w1, e1), Result.ErrorWithWarnings(w2, e2)) =>
-        Result.ErrorWithWarnings(C.combine(w1, w2), e1)
-
-      case (Result.Error(e1), Result.Error(b)) =>
-        Result.Error(e1)
-
-      case (Result.Error(e1), Result.Success(b)) =>
-        Result.Error(e1)
-
-      case (Result.Error(e1), Result.SuccessWithWarnings(w2, b)) =>
-        Result.ErrorWithWarnings(w2, e1)
-
-      case (Result.Error(e1), Result.ErrorWithWarnings(w2, e2)) =>
-        Result.ErrorWithWarnings(w2, e1)
-    }
-
-  def zipWithCause[B, C, E1 >: E, W1 >: W](other: Result[E1, W1, B])(f: (A, B) => C): Result[Cause[E1], Cause[W1], C] =
-    (self, other) match {
-      case (Result.Success(a), Result.Success(b)) =>
-        Result.Success(f(a, b))
-
-      case (Result.Success(a), Result.SuccessWithWarnings(w, b)) =>
-        Result.SuccessWithWarnings(Cause.single(w), f(a, b))
-
-      case (Result.Success(a), Result.Error(b)) =>
-        Result.Error(Cause.single(b))
-
-      case (Result.Success(a), Result.ErrorWithWarnings(w, b)) =>
-        Result.ErrorWithWarnings(Cause.single(w), Cause.single(b))
-
-      case (Result.SuccessWithWarnings(w1, a), Result.Success(b)) =>
-        Result.SuccessWithWarnings(Cause.single(w1), f(a, b))
-
-      case (Result.SuccessWithWarnings(w1, a), Result.SuccessWithWarnings(w2, b)) =>
-        Result.SuccessWithWarnings(Cause.both(Cause.single(w1), Cause.single(w2)), f(a, b))
-
-      case (Result.SuccessWithWarnings(w1, a), Result.Error(e)) =>
-        Result.ErrorWithWarnings(Cause.single(w1), Cause.single(e))
-
-      case (Result.SuccessWithWarnings(w1, a), Result.ErrorWithWarnings(w2, e)) =>
-        Result.ErrorWithWarnings(Cause.both(Cause.single(w1), Cause.single(w2)), Cause.single(e))
-
-      case (Result.ErrorWithWarnings(w1, e1), Result.Success(b)) =>
-        Result.ErrorWithWarnings(Cause.single(w1), Cause.single(e1))
-
-      case (Result.ErrorWithWarnings(w1, e1), Result.Error(b)) =>
-        Result.ErrorWithWarnings(Cause.single(w1), Cause.single(e1))
-
-      case (Result.ErrorWithWarnings(w1, e1), Result.SuccessWithWarnings(w2, b)) =>
-        Result.ErrorWithWarnings(Cause.both(Cause.single(w1), Cause.single(w2)), Cause.single(e1))
-
-      case (Result.ErrorWithWarnings(w1, e1), Result.ErrorWithWarnings(w2, e2)) =>
-        Result.ErrorWithWarnings(
-          Cause.both(Cause.single(w1), Cause.single(w2)),
-          Cause.both(Cause.single(e1), Cause.single(e2))
-        )
+        Result.ErrorWithWarnings(fW(w1, w2), fE(e1, e2))
 
       case (Result.Error(e1), Result.Error(e2)) =>
-        Result.Error(Cause.both(Cause.single(e1), Cause.single(e2)))
+        Result.Error(fE(e1, e2))
 
       case (Result.Error(e1), Result.Success(b)) =>
-        Result.Error(Cause.single(e1))
+        Result.Error(e1)
 
       case (Result.Error(e1), Result.SuccessWithWarnings(w2, b)) =>
-        Result.ErrorWithWarnings(Cause.single(w2), Cause.single(e1))
+        Result.ErrorWithWarnings(w2, e1)
 
       case (Result.Error(e1), Result.ErrorWithWarnings(w2, e2)) =>
-        Result.ErrorWithWarnings(Cause.single(w2), Cause.single(e1))
+        Result.ErrorWithWarnings(w2, fE(e1, e2))
     }
+  }
 
-  def zip[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, (A, B)] =
+  def zip[B, E1 >: E: Combine, W1 >: W: Combine](other: Result[E1, W1, B]): Result[E1, W1, (A, B)] =
     zipWith(other)((_, _))
 
-  def zipRight[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, B] =
+  def zipRight[B, E1 >: E: Combine, W1 >: W: Combine](
+    other: Result[E1, W1, B]
+  ): Result[E1, W1, B] =
     zipWith(other)((_, r) => r)
 
-  def zipLeft[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, A] =
+  def zipLeft[B, E1 >: E: Combine, W1 >: W: Combine](
+    other: Result[E1, W1, B]
+  ): Result[E1, W1, A] =
     zipWith(other)((l, _) => l)
 
-  def <*>[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, (A, B)] =
+  def <*>[B, E1 >: E: Combine, W1 >: W: Combine](
+    other: Result[E1, W1, B]
+  ): Result[E1, W1, (A, B)] =
     zip(other)
 
-  def *>[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, B] =
+  def *>[B, E1 >: E: Combine, W1 >: W: Combine](other: Result[E1, W1, B]): Result[E1, W1, B] =
     zipRight(other)
 
-  def <*[B, E1 >: E, W1 >: W](other: Result[E1, W1, B])(implicit C: Combine[W1]): Result[E1, W1, A] =
+  def <*[B, E1 >: E: Combine, W1 >: W: Combine](other: Result[E1, W1, B]): Result[E1, W1, A] =
     zipLeft(other)
+
+  def flatMap[E1 >: E, W1 >: W: Combine, B](f: A => Result[E1, W1, B]): Result[E1, W1, B] =
+    self match {
+      case Result.Success(result) =>
+        f(result)
+
+      case Result.SuccessWithWarnings(warnings, result) =>
+        f(result) match {
+          case Result.Success(result) =>
+            Result.SuccessWithWarnings(warnings, result)
+
+          case Result.SuccessWithWarnings(resultWarnings, result) =>
+            Result.SuccessWithWarnings(Combine[W1].combine(warnings, resultWarnings), result)
+
+          case Result.Error(error) =>
+            Result.ErrorWithWarnings(warnings, error)
+
+          case Result.ErrorWithWarnings(resultWarnings, error) =>
+            Result.ErrorWithWarnings(Combine[W1].combine(warnings, resultWarnings), error)
+        }
+
+      case Result.Error(error) =>
+        Result.Error(error)
+
+      case Result.ErrorWithWarnings(warnings, error) =>
+        Result.ErrorWithWarnings(warnings, error)
+    }
 
   def mapResult[B](f: A => B): Result[E, W, B] = self match {
     case s @ Result.Success(result)                => s.copy(result = f(result))
@@ -211,52 +194,42 @@ sealed trait Result[+E, +W, +A] { self =>
       Result.ErrorWithWarnings(C.combine(warning, existing), error)
   }
 
-  def fallback[E1 >: E, W1 >: W, A1 >: A](that: Result[E1, W1, A1]): Result[E1, W1, A1] = self match {
-    case s @ Result.Success(_)                            => s
-    case s @ Result.SuccessWithWarnings(_, _)             => s
-    case Result.Error(_) | Result.ErrorWithWarnings(_, _) => that
-  }
-
-  def fallbackCause[E1 >: E, W1 >: W, A1 >: A](that: Result[E1, W1, A1]): Result[Cause[E1], Cause[W1], A1] =
+  def fallback[E1 >: E: Combine, W1 >: W: Combine, A1 >: A](that: => Result[E1, W1, A1]): Result[E1, W1, A1] =
     self match {
-      case s @ Result.Success(_) => s
-      case Result.SuccessWithWarnings(warnings, result) =>
-        Result.SuccessWithWarnings(Cause.single(warnings), result)
+      case Result.Success(result) =>
+        Result.Success(result)
 
-      case e @ Result.Error(_) =>
+      case Result.SuccessWithWarnings(w1, result) =>
+        Result.SuccessWithWarnings(w1, result)
+
+      case Result.Error(e1) =>
         that match {
-          case Result.Success(_) =>
-            e.mapError(Cause.single)
+          case Result.Success(result) =>
+            Result.Success(result)
 
-          case Result.SuccessWithWarnings(warnings, _) =>
-            e.mapError(Cause.single)
-              .appendWarning(Cause.single(warnings))(Cause.causeThenCombine)
+          case Result.SuccessWithWarnings(warnings, result) =>
+            Result.SuccessWithWarnings(warnings, result)
 
           case Result.Error(e2) =>
-            e.mapError(e1 => Cause.andThen(Cause.single(e1), Cause.single(e2)))
+            Result.Error(Combine[E1].combine(e1, e2))
 
-          case Result.ErrorWithWarnings(w2, e2) =>
-            e.mapError(e1 => Cause.andThen(Cause.single(e1), Cause.single(e2)))
-              .appendWarning(Cause.single(w2))(Cause.causeThenCombine)
+          case Result.ErrorWithWarnings(warnings, e2) =>
+            Result.ErrorWithWarnings(warnings, Combine[E1].combine(e1, e2))
         }
 
-      case e @ Result.ErrorWithWarnings(_, _) =>
+      case Result.ErrorWithWarnings(w1, e1) =>
         that match {
-          case Result.Success(_) =>
-            e.mapError(Cause.single)
-              .mapWarning(Cause.single)
+          case Result.Success(result) =>
+            Result.Success(result)
 
-          case Result.SuccessWithWarnings(w2, _) =>
-            e.mapError(Cause.single)
-              .mapWarning(w1 => Cause.andThen(Cause.single(w1), Cause.single(w2)))
+          case Result.SuccessWithWarnings(warnings, result) =>
+            Result.SuccessWithWarnings(warnings, result)
 
           case Result.Error(e2) =>
-            e.mapError(e1 => Cause.andThen(Cause.single(e1), Cause.single(e2)))
-              .mapWarning(Cause.single)
+            Result.Error(Combine[E1].combine(e1, e2))
 
           case Result.ErrorWithWarnings(w2, e2) =>
-            e.mapError(e1 => Cause.andThen(Cause.single(e1), Cause.single(e2)))
-              .mapWarning(w1 => Cause.andThen(Cause.single(w1), Cause.single(w2)))
+            Result.ErrorWithWarnings(Combine[W1].combine(w1, w2), Combine[E1].combine(e1, e2))
         }
     }
 }

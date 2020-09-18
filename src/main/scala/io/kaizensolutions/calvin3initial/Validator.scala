@@ -105,7 +105,7 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
           second.run(result)
 
         case sw @ Result.SuccessWithWarnings(_, result) =>
-          sw.zipWith(second.run(result))((_, r) => r)(combineW)
+          sw.zipWith(second.run(result))((_, r) => r)(combineE, combineW)
 
         case e @ Result.Error(error) =>
           e
@@ -115,126 +115,20 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
       }
 
     case Validator.FlatMap(underlying, f, combineW) =>
-      underlying.run(i) match {
-        case Result.Success(result) =>
-          f(result).run(i)
-
-        case Result.SuccessWithWarnings(warnings, result) =>
-          f(result).run(i) match {
-            case Result.Success(result) =>
-              Result.SuccessWithWarnings(warnings, result)
-
-            case Result.SuccessWithWarnings(resultWarnings, result) =>
-              Result.SuccessWithWarnings(combineW.combine(warnings, resultWarnings), result)
-
-            case Result.Error(error) =>
-              Result.ErrorWithWarnings(warnings, error)
-
-            case Result.ErrorWithWarnings(resultWarnings, error) =>
-              Result.ErrorWithWarnings(combineW.combine(warnings, resultWarnings), error)
-          }
-
-        case Result.Error(error) => Result.Error(error)
-
-        case Result.ErrorWithWarnings(warnings, error) =>
-          Result.ErrorWithWarnings(warnings, error)
-      }
+      underlying
+        .run(i)
+        .flatMap(result => f(result).run(i))(combineW)
 
     case zipCase: Validator.ZipWith[I, E, W, A, b, c] =>
       val left  = zipCase.left.run(i)
       val right = zipCase.right.run(i)
       val f     = zipCase.f
-      val fW    = zipCase.combineW.combine _
-      val fE    = zipCase.combineE.combine _
-
-      (left, right) match {
-        case (Result.Success(a), Result.Success(b)) =>
-          Result.Success(f(a, b))
-
-        case (Result.Success(a), Result.SuccessWithWarnings(w, b)) =>
-          Result.SuccessWithWarnings(w, f(a, b))
-
-        case (Result.Success(a), Result.Error(b)) =>
-          Result.Error(b)
-
-        case (Result.Success(a), Result.ErrorWithWarnings(w, b)) =>
-          Result.ErrorWithWarnings(w, b)
-
-        case (Result.SuccessWithWarnings(w1, a), Result.Success(b)) =>
-          Result.SuccessWithWarnings(w1, f(a, b))
-
-        case (Result.SuccessWithWarnings(w1, a), Result.SuccessWithWarnings(w2, b)) =>
-          Result.SuccessWithWarnings(fW(w1, w2), f(a, b))
-
-        case (Result.SuccessWithWarnings(w1, a), Result.Error(e)) =>
-          Result.ErrorWithWarnings(w1, e)
-
-        case (Result.SuccessWithWarnings(w1, a), Result.ErrorWithWarnings(w2, e)) =>
-          Result.ErrorWithWarnings(fW(w1, w2), e)
-
-        case (Result.ErrorWithWarnings(w1, e1), Result.Success(b)) =>
-          Result.ErrorWithWarnings(w1, e1)
-
-        case (Result.ErrorWithWarnings(w1, e1), Result.Error(e2)) =>
-          Result.ErrorWithWarnings(w1, fE(e1, e2))
-
-        case (Result.ErrorWithWarnings(w1, e1), Result.SuccessWithWarnings(w2, b)) =>
-          Result.ErrorWithWarnings(fW(w1, w2), e1)
-
-        case (Result.ErrorWithWarnings(w1, e1), Result.ErrorWithWarnings(w2, e2)) =>
-          Result.ErrorWithWarnings(fW(w1, w2), fE(e1, e2))
-
-        case (Result.Error(e1), Result.Error(e2)) =>
-          Result.Error(fE(e1, e2))
-
-        case (Result.Error(e1), Result.Success(b)) =>
-          Result.Error(e1)
-
-        case (Result.Error(e1), Result.SuccessWithWarnings(w2, b)) =>
-          Result.ErrorWithWarnings(w2, e1)
-
-        case (Result.Error(e1), Result.ErrorWithWarnings(w2, e2)) =>
-          Result.ErrorWithWarnings(w2, fE(e1, e2))
-      }
+      val cW    = zipCase.combineW
+      val cE    = zipCase.combineE
+      left.zipWith(right)(f)(cE, cW)
 
     case Validator.Fallback(first, second, combineE, combineW) =>
-      first.run(i) match {
-        case Result.Success(result) =>
-          Result.Success(result)
-
-        case Result.SuccessWithWarnings(w1, result) =>
-          Result.SuccessWithWarnings(w1, result)
-
-        case Result.Error(e1) =>
-          second.run(i) match {
-            case Result.Success(result) =>
-              Result.Success(result)
-
-            case Result.SuccessWithWarnings(warnings, result) =>
-              Result.SuccessWithWarnings(warnings, result)
-
-            case Result.Error(e2) =>
-              Result.Error(combineE.combine(e1, e2))
-
-            case Result.ErrorWithWarnings(warnings, e2) =>
-              Result.ErrorWithWarnings(warnings, combineE.combine(e1, e2))
-          }
-
-        case Result.ErrorWithWarnings(w1, e1) =>
-          second.run(i) match {
-            case Result.Success(result) =>
-              Result.Success(result)
-
-            case Result.SuccessWithWarnings(warnings, result) =>
-              Result.SuccessWithWarnings(warnings, result)
-
-            case Result.Error(e2) =>
-              Result.Error(combineE.combine(e1, e2))
-
-            case Result.ErrorWithWarnings(w2, e2) =>
-              Result.ErrorWithWarnings(combineW.combine(w1, w2), combineE.combine(e1, e2))
-          }
-      }
+      first.run(i).fallback(second.run(i))(combineE, combineW)
 
     case c: Validator.ExposeCause[I, e, w, A] =>
       Validator

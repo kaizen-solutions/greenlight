@@ -34,16 +34,16 @@ sealed trait Result[+E, +W, +A] { self =>
   def zipWith[B, C, E1 >: E: Combine, W1 >: W: Combine](that: Result[E1, W1, B])(f: (A, B) => C): Result[E1, W1, C] =
     (self, that) match {
       case (Result.Success(w1, a1), Result.Success(w2, a2)) =>
-        Result.Success(Combine[Option[W1]].combine(w1, w2), f(a1, a2))
+        Result.Success(Combine.combineOption[W1].combine(w1, w2), f(a1, a2))
 
       case (Result.Success(w1, _), Result.Error(w2, e)) =>
-        Result.Error(Combine[Option[W1]].combine(w1, w2), e)
+        Result.Error(Combine.combineOption[W1].combine(w1, w2), e)
 
       case (Result.Error(w1, e), Result.Success(w2, _)) =>
-        Result.Error(Combine[Option[W1]].combine(w1, w2), e)
+        Result.Error(Combine.combineOption[W1].combine(w1, w2), e)
 
       case (Result.Error(w1, e1), Result.Error(w2, e2)) =>
-        Result.Error(Combine[Option[W1]].combine(w1, w2), Combine[E1].combine(e1, e2))
+        Result.Error(Combine.combineOption[W1].combine(w1, w2), Combine[E1].combine(e1, e2))
     }
 
   def eitherWith[B, C, E1 >: E: Combine, W1 >: W: Combine](
@@ -51,16 +51,16 @@ sealed trait Result[+E, +W, +A] { self =>
   )(f: Either[A, B] => C): Result[E1, W1, C] =
     (self, that) match {
       case (Result.Success(w1, a1), Result.Success(w2, _)) =>
-        Result.Success(Combine[Option[W1]].combine(w1, w2), f(Left(a1)))
+        Result.Success(Combine.combineOption[W1].combine(w1, w2), f(Left(a1)))
 
       case (Result.Success(w1, a1), Result.Error(w2, _)) =>
-        Result.Success(Combine[Option[W1]].combine(w1, w2), f(Left(a1)))
+        Result.Success(Combine.combineOption[W1].combine(w1, w2), f(Left(a1)))
 
-      case (Result.Error(w1, _), Result.Success(w2, a2)) =>
-        Result.Success(Combine[Option[W1]].combine(w1, w2), f(Right(a2)))
+      case (Result.Error(w1, e), Result.Success(w2, a2)) =>
+        Result.Success(Combine.combineOption[W1].combine(w1, w2), f(Right(a2)))
 
       case (Result.Error(w1, e1), Result.Error(w2, e2)) =>
-        Result.Error(Combine[Option[W1]].combine(w1, w2), Combine[E1].combine(e1, e2))
+        Result.Error(Combine.combineOption[W1].combine(w1, w2), Combine[E1].combine(e1, e2))
     }
 
   def map[B](f: A => B): Result[E, W, B] = self match {
@@ -78,15 +78,17 @@ sealed trait Result[+E, +W, +A] { self =>
     case Result.Error(warning, error)    => Result.Error(warning.map(f), error)
   }
 
-  def flatMap[E1 >: E, W1 >: W: Combine, B](f: A => Result[E1, W1, B]): Result[E1, W1, B] =
+  def flatMap[E1 >: E, W1 >: W: Combine, B](
+    f: A => Result[E1, W1, B]
+  ): Result[E1, W1, B] =
     self match {
       case Result.Success(w1, a) =>
         f(a) match {
           case Result.Success(w2, b) =>
-            Result.Success(Combine[Option[W1]].combine(w1, w2), b)
+            Result.Success(Combine.combineOption[W1].combine(w1, w2), b)
 
           case Result.Error(w2, error) =>
-            Result.Error(Combine[Option[W1]].combine(w1, w2), error)
+            Result.Error(Combine.combineOption[W1].combine(w1, w2), error)
 
         }
 

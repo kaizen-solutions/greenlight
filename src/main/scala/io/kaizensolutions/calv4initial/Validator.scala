@@ -3,7 +3,7 @@ package io.kaizensolutions.calv4initial
 sealed trait Validator[-I, +E, +W, +A] { self =>
   def zipWith[I1 <: I, E1 >: E, W1 >: W: Combine, B, C](that: Validator[I1, E1, W1, B])(
     f: (A, B) => C
-  ): Validator[I1, E1, W1, C] = Validator.ZipWith(self, that, f, Combine.left, Combine[W1])
+  ): Validator[I1, E1, W1, C] = Validator.ZipWith(self, that, f, Combine.left[E1], Combine[W1])
 
   def zipRight[I1 <: I, E1 >: E, W1 >: W: Combine, B](that: Validator[I1, E1, W1, B]): Validator[I1, E1, W1, B] =
     zipWith(that)((_, b) => b)
@@ -22,13 +22,13 @@ sealed trait Validator[-I, +E, +W, +A] { self =>
     eitherWith(that) {
       case Left(a)  => a
       case Right(a) => a
-    }(Combine.left, Combine.left)
+    }(Combine.left[E1], Combine.left[W1])
 
   def fallback[I1 <: I, E1 >: E, W1 >: W, A1 >: A](that: Validator[I1, E1, W1, A1]): Validator[I1, E1, W1, A1] =
     or(that)
 
   def andThen[I1 <: I, E1 >: E, W1 >: W: Combine, B](that: Validator[A, E1, W1, B]): Validator[I1, E1, W1, B] =
-    Validator.AndThen(self, that, Combine.right, Combine[W1])
+    Validator.AndThen(self, that, Combine.right[E1], Combine[W1])
 
   def flatMap[I1 <: I, E1 >: E, W1 >: W: Combine, B](f: A => Validator[I1, E1, W1, B]): Validator[I1, E1, W1, B] =
     Validator.FlatMap(self, f, Combine[W1])

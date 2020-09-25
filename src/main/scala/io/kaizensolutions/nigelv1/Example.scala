@@ -1,7 +1,7 @@
 package io.kaizensolutions.nigelv1
 
 import io.kaizensolutions.nigelv1.Result.{Error, Success}
-import io.kaizensolutions.nigelv1.Validator.{from, success, test}
+import io.kaizensolutions.nigelv1.Validator.{failure, from, success, test}
 
 import scala.util.Try
 
@@ -49,15 +49,16 @@ object Example extends App {
   // Parsers
   val parseLatitude = getLatitude andThen nonEmptyString andThen convertToDouble
   val parseLongitude = getLongitude andThen convertToDouble
-  val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) convertTo ParsedCoords)
-  val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) convertTo ParsedAddress)
-  val parseObject = (parseCoords, parseAddress) convertTo ParsedObj
-
+  val parseCoords = getCoords andThen ((parseLatitude, parseLongitude) mapN ParsedCoords)
+  val parseAddress = getAddress andThen ((getStreet, getCity, getCountry) mapN ParsedAddress)
+  val parseObject = (parseCoords, parseAddress) mapN ParsedObj
 
   val geo2parsedCoords =
-    ((convertToDouble or success(0d)) and (convertToDouble or success(0d)))
-      .contramap((coords: GeoCoords) => (coords.lat, coords.long))
-      .map(ParsedCoords.tupled)
+    ((convertToDouble or failure("Bad Lat")) and (convertToDouble or failure("Bad Long")))
+      .dimap(
+        (coords: GeoCoords) => (coords.lat, coords.long),
+        ParsedCoords.tupled
+      )
 
   val addr2parsedAddr =
     (from[String], from[String], from[String])
@@ -69,11 +70,12 @@ object Example extends App {
 
   val parsedObj =
     (geo2parsedCoords and addr2parsedAddr)
-      .contramap((o: MyObj) => (o.coords, o.address))
-      .map(ParsedObj.tupled)
+      .dimap(
+        (o: MyObj) => (o.coords, o.address),
+        ParsedObj.tupled
+      )
 
-
-  val obj1 = MyObj(GeoCoords("23.123", "43.242"), Address("23 Meh St.", "Bobsville", "Canada"))
+  val obj1 = MyObj(GeoCoords("abcd", "defg"), Address("23 Meh St.", "Bobsville", "Canada"))
 
   parsedObj.run(obj1) match {
     case Success(warnings, result) =>
@@ -81,14 +83,17 @@ object Example extends App {
       println(s"Result: $result")
       println()
       println("Warnings:")
-      warnings.foreach(println)
+      println(warnings)
+      // warnings.foreach(println)
 
     case Error(warnings, errors) =>
       println("Failed :(")
       println("Errors:")
-      errors.foreach(println)
+      println(errors)
+      //errors.foreach(println)
       println()
       println("Warnings:")
-      warnings.foreach(println)
+      println(warnings)
+      // warnings.foreach(println)
   }
 }

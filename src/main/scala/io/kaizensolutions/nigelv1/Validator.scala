@@ -55,8 +55,8 @@ final case class Validator[-I, +E, +W, +A](conv: I => Result[E, W, A]) {
         case Success(warnings, result) => Success(warnings.map(lub.right), result)
         case Error(w1, e1) =>
           that.run(i) match {
-            case Success(w2, r) => Success((w1 ++ w2).map(lub.right) ++ e1.map(lub.left), r)
-            case Error(w2, e2) => Error((w1 ++ w2).map(lub.right) ++ e1.map(lub.left), e2)
+            case Success(w2, r) => Success(Cause.fallback(Cause.fallback(w1, w2).map(lub.right), e1.map(lub.left)), r)
+            case Error(w2, e2) => Error(Cause.fallback(Cause.fallback(w1, w2).map(lub.right), e1.map(lub.left)), e2)
           }
       }
     }
@@ -66,13 +66,13 @@ final case class Validator[-I, +E, +W, +A](conv: I => Result[E, W, A]) {
 
   def withWarning[I2 <: I, W2](handler: I2 => W2): Validator[I2, E, W2, A] =
     Validator(i => this.run(i) match {
-      case Error(_, errors) => Error(Vector(handler(i)), errors)
-      case Success(_, result) => Success(Vector(handler(i)), result)
+      case Error(_, errors) => Error(Cause.single(handler(i)), errors)
+      case Success(_, result) => Success(Cause.single(handler(i)), result)
     })
 
   def withError[I2 <: I, E2](handler: I2 => E2): Validator[I2, E2, W, A] =
     Validator(i => this.run(i) match {
-      case Error(warnings, _) => Error(warnings, Vector(handler(i)))
+      case Error(warnings, _) => Error(warnings, Cause.single(handler(i)))
       case Success(warnings, result) => Success(warnings, result)
     })
 
@@ -89,6 +89,9 @@ object Validator {
 
   def success[A](value: A): Validator[Any, Nothing, Nothing, A] =
     fromFunction(Function.const(value))
+
+  def failure[E](error: E): Validator[Any, E, Nothing, Nothing] =
+    Validator(_ => Result.error(error))
 
   def unit: Validator[Any, Nothing, Nothing, Unit] =
     success(())
@@ -111,9 +114,6 @@ object Validator {
 
     def mapN[C](f: (A, B) => C): Validator[I, E2, W2, C] =
       value.join.map(f.tupled)
-
-    def convertTo[C](f: (A, B) => C): Validator[I, E2, W2, C] =
-      value.join.map(f.tupled)
   }
 
   implicit class Tuple3Ops[I, E, W, A, B, C](value: (Validator[I, E, W, A], Validator[I, E, W, B], Validator[I, E, W, C])) {
@@ -127,9 +127,6 @@ object Validator {
       }
 
     def mapN[D](f: (A, B, C) => D): Validator[I, E, W, D] =
-      value.join.map(f.tupled)
-
-    def convertTo[D](f: (A, B, C) => D): Validator[I, E, W, D] =
       value.join.map(f.tupled)
   }
 

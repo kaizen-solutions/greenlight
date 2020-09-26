@@ -1,5 +1,7 @@
 package io.kaizensolutions.calv4initial
 
+import scala.util.Try
+
 sealed trait Validator[-I, +E, +W, +A] { self =>
   def zipWith[I1 <: I, E1 >: E, W1 >: W: Combine, B, C](that: Validator[I1, E1, W1, B])(
     f: (A, B) => C
@@ -143,4 +145,53 @@ object Validator {
     combineE: Combine[E],
     combineW: Combine[W]
   ) extends Validator[I, E, W, C]
+
+  def pure[I]: Validator[I, Nothing, Nothing, I] =
+    Validator.Pure(i => Result.succeed(i))
+
+  def lift[A](a: A): Validator[Any, Nothing, Nothing, A] =
+    Validator.Pure(_ => Result.succeed(a))
+
+  def fromFunction[I, O](fn: I => O): Validator[I, Nothing, Nothing, O] =
+    Validator.Pure(i => Result.succeed(fn(i)))
+
+  def fromEither[I, E, O](fn: I => Either[E, O]): Validator[I, E, Nothing, O] =
+    Validator.Pure(i => fn(i).fold(Result.fail, Result.succeed))
+
+  def fromTry[I, O](fn: I => Try[O]): Validator[I, Throwable, Nothing, O] =
+    Validator.Pure(i => fn(i).fold(Result.fail, Result.succeed))
+
+  def fromPredicate[I](p: I => Boolean): Validator[I, Unit, Nothing, I] =
+    Validator.Pure { i =>
+      val res = p(i)
+      if (res) Result.succeed(i)
+      else Result.fail(())
+    }
+
+  def fromPredicateWithError[I, E](p: I => Boolean)(error: E): Validator[I, E, Nothing, I] =
+    Validator.Pure { i =>
+      val res = p(i)
+      if (res) Result.succeed(i)
+      else Result.fail(error)
+    }
+}
+
+trait ValidatorSyntax {
+  def validate[I]: Validator[I, Nothing, Nothing, I] = Validator.pure[I]
+
+  implicit class ValidatorFunctionOps[I, O](fn: Function[I, O]) {
+    def toValidator: Validator[I, Nothing, Nothing, O] = Validator.fromFunction(fn)
+  }
+
+  implicit class ValidatorPredicateOps[I, O](fn: Function[I, Boolean]) {
+    def toValidator: Validator[I, Unit, Nothing, I] = Validator.fromPredicate(fn)
+  }
+
+  implicit class ValidatorTryOps[I, O](fn: Function[I, Try[O]]) {
+    def toValidator: Validator[I, Throwable, Nothing, O] = Validator.fromTry(fn)
+  }
+
+  implicit class ValidatorEitherOps[I, E, O](fn: Function[I, Either[E, O]]) {
+    def toValidator: Validator[I, E, Nothing, O] = Validator.fromEither(fn)
+  }
 }

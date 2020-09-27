@@ -1,7 +1,5 @@
 package io.kaizensolutions.calv4initial
 
-import io.kaizensolutions.calv4initial.Cause.pruneCombine
-
 sealed trait Cause[+A] extends Serializable with Product { self =>
   def map[B](f: A => B): Cause[B] = self match {
     case Cause.Single(a)               => Cause.single(f(a))
@@ -9,24 +7,6 @@ sealed trait Cause[+A] extends Serializable with Product { self =>
     case Cause.Then(first, second)     => Cause.andThen(first.map(f), second.map(f))
     case Cause.Fallback(first, second) => Cause.fallback(first.map(f), second.map(f))
     case Cause.Pass                    => Cause.Pass
-  }
-
-  // Note: both prune/pruneCombine and optimize are optimizing the tree, should refactor this
-  def prune: Cause[A] = self match {
-    case s @ Cause.Single(_) =>
-      s
-
-    case Cause.Both(l, r) =>
-      pruneCombine(l, r)(Cause.Both(_, _))
-
-    case Cause.Then(first, second) =>
-      pruneCombine(first, second)(Cause.Then(_, _))
-
-    case Cause.Fallback(first, second) =>
-      pruneCombine(first, second)(Cause.Fallback(_, _))
-
-    case e @ Cause.Pass =>
-      e
   }
 }
 
@@ -85,20 +65,23 @@ object Cause {
       Both(optimize(next), optimize(that))
 
     case Both(first, second) =>
-      Both(optimize(first), optimize(second))
+      val optimizedFirst  = optimize(first)
+      val optimizedSecond = optimize(second)
+      if (optimizedFirst == first || optimizedSecond == second) Both(optimizedFirst, optimizedSecond)
+      else optimize(Both(optimizedFirst, optimizedSecond))
 
     case Then(first, second) =>
-      Then(optimize(first), optimize(second))
+      val optimizedFirst  = optimize(first)
+      val optimizedSecond = optimize(second)
+      if (optimizedFirst == first || optimizedSecond == second) Then(optimizedFirst, optimizedSecond)
+      else optimize(Then(optimizedFirst, optimizedSecond))
 
     case Fallback(first, second) =>
-      Fallback(optimize(first), optimize(second))
+      val optimizedFirst  = optimize(first)
+      val optimizedSecond = optimize(second)
+      if (optimizedFirst == first || optimizedSecond == second) Fallback(optimizedFirst, optimizedSecond)
+      else optimize(Fallback(optimizedFirst, optimizedSecond))
 
     case o => o
   }
-
-  private def pruneCombine[A](left: Cause[A], right: Cause[A])(combiner: (Cause[A], Cause[A]) => Cause[A]) =
-    (left.prune, right.prune) match {
-      case (Cause.Pass, Cause.Pass) => Cause.Pass
-      case (l, r)                   => combiner(l, r)
-    }
 }

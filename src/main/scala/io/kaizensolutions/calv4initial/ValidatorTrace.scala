@@ -15,8 +15,8 @@ trait ValidatorTrace {
       combineW: (Cause[W1], Cause[W1]) => Cause[W1]
     ): Trace[E1, W1] =
       Trace(
-        combineW(self.warnings, that.warnings).prune,
-        combineE(self.errors, that.errors).prune
+        combineW(self.warnings, that.warnings),
+        combineE(self.errors, that.errors)
       )
 
     def andThen[E1 >: E, W1 >: W](that: Trace[E1, W1]): Trace[E1, W1] =
